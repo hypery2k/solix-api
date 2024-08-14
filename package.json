@@ -7,8 +7,8 @@
     "clean": "npm i",
     "build": "tsc",
     "dev": "ts-node ./index.ts",
-    "lint:fix": "eslint --fix 'src/**/*.ts{,x}'",
-    "lint": "tsc --noEmit && eslint 'src/**/*.ts{,x}'",
+    "lint:fix": "eslint --fix src test",
+    "lint": "tsc --noEmit && eslint src test",
     "test": "npm run lint .",
     "e2e": "jest"
   },
