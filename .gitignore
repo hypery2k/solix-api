@@ -1,0 +1,20 @@
+node_modules/
+.idea/
+.env
+
+# Build
+bin/
+dist/
+coverage/
+
+# yarn
+**/.yarn/*
+!**/.yarn/patches
+!**/.yarn/releases
+!**/.yarn/plugins
+!**/.yarn/sdks
+!**/.yarn/versions
+**/.pnp.*
+**/yarn-error.log
+auth.data
+tmp/
