@@ -4,6 +4,7 @@
   "description": "Anker Solix API Wrapper",
   "main": "dist/index.js",
   "scripts": {
+    "clean": "npm i",
     "build": "tsc",
     "dev": "ts-node ./index.ts",
     "lint:fix": "eslint --fix 'src/**/*.ts{,x}'",
