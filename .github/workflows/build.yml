@@ -1,0 +1,193 @@
+name: Build
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - develop
+    tags:
+      - '*'
+
+jobs:
+  build:
+    name: 'Build and Test on Node ${{ matrix.node_version }} and ${{ matrix.os }}'
+    runs-on: '${{ matrix.os }}'
+    strategy:
+      matrix:
+        node_version:
+          - 18
+          - 20
+          - 22
+        os:
+          - ubuntu-latest
+          - macOS-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 'Use Node.js ${{ matrix.node_version }}'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '${{ matrix.node_version }}'
+      - name: npm build and test
+        run: |
+          npm run clean
+          npm run build
+          npm run test
+
+  chart:
+    name: 'Build and Test Helm Chart'
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.11.2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          check-latest: true
+
+      - name: Helm Chart Testing
+        uses: helm/chart-testing-action@v2.6.1
+
+      - name: Run chart-testing (list-changed)
+        id: list-changed
+        run: |
+          changed=$(ct list-changed --target-branch ${{ github.event.repository.default_branch }})
+          if [[ -n "$changed" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run chart-testing (lint)
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct lint --target-branch ${{ github.event.repository.default_branch }}
+
+      - name: Create kind cluster
+        if: steps.list-changed.outputs.changed == 'true'
+        uses: helm/kind-action@v1.10.0
+
+      - name: Run chart-testing (install - no further args)
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct install --target-branch ${{ github.event.repository.default_branch }} --helm-extra-set-args "--set 'keycloak.config.url=http://localhost:8080' --set 'keycloak.config.url=http://localhost:8080' --set 'keycloak.config.clientId=clientId' --set 'keycloak.config.clientSecret=clientSecret'"
+
+      - name: Run chart-testing (install - with args)
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct install --target-branch ${{ github.event.repository.default_branch }} --helm-extra-set-args "-f charts/keycloak-reporter/ci.values.yaml"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-folder
+          path: dist
+
+  end2end:
+    # TODO: Docker End2End
+    name: 'End2End Test on Node ${{ matrix.node_version }} and ${{ matrix.os }}'
+    runs-on: '${{ matrix.os }}'
+    strategy:
+      fail-fast: true
+      matrix:
+        node_version:
+          - 18
+          - 20
+          - 21
+        os:
+          - ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 'Use Node.js ${{ matrix.node_version }}'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '${{ matrix.node_version }}'
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin' # See 'Supported distributions' for available options
+          java-version: '17'
+      - name: npm build and test
+        run: |
+          npm run clean
+          npm run build
+      - name: Tune GitHub-hosted runner network
+        uses: smorimoto/tune-github-hosted-runner-network@v1
+
+      - name: Start Keycloak server
+        run: npm run end2end:start-server &
+
+      - name: Wait for Keycloak server
+        run: .bin/wait-for-server.sh
+
+      - name: Run End2End Tests
+        uses: nick-fields/retry@v3
+        with:
+          max_attempts: 3
+          retry_on: error
+          timeout_minutes: 10
+          command: |
+            env
+            npm run end2end:test
+        env:
+          ANKER_USERNAME: ${{ vars.ANKER_E2E_USER }}
+          ANKER_PASSWORD: ${{ secrets.ANKER_E2E_PASS }}
+          ANKER_COUNTRY: ${{ vars.ANKER_E2E_COUNTRY }}
+          GH_BRANCH: ${{ github.head_ref || github.ref_name }}
+
+  build-results:
+    name: Build results
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    needs:
+        - build
+        - end2end
+    steps:
+      - run: exit 1
+        # see https://stackoverflow.com/a/67532120/4907315
+        if: >-
+            ${{
+                contains(needs.*.result, 'failure')
+                || contains(needs.*.result, 'cancelled')
+                || contains(needs.*.result, 'skipped')
+                }}
+  package:
+    name: Package Application
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - chart
+      - end2end
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # renovate: datasource=docker depName=node
+          node-version: '20'
+      - name: 'Build Package'
+        run: |
+          npm run clean
+          npm run build
+
+      - name: Write version vars
+        run: |
+          BUILD_DATE=`date -u +"%Y-%m-%dT%H:%M:%SZ"`
+          BRANCH=${GITHUB_REF_NAME#v}
+          APP_VERSION=$(cat package.json | grep version| head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g')
+          echo Version: $APP_VERSION
+          echo "VERSION=$APP_VERSION" >> $GITHUB_ENV
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
+          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
+
+      - name: Push To NPM Registry
+        id: push-to-npm-tagged
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" >> ~/.npmrc
+          npm publish
+        if: github.ref_type == 'tag' || github.tag != ''
