@@ -54,6 +54,8 @@ jobs:
           npm run clean
           npm run build
           npm version ${{ github.event.inputs.releaseversion }}
+          git push
+          git push --tags
 
       - name: Conventional Changelog Action
         uses: TriPSs/conventional-changelog-action@v5
