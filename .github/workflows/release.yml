@@ -51,8 +51,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          npm run clean && npm run build
-          npm version --no-git-tag-version ${{ github.event.inputs.releaseversion }}
+          npm run clean
+          npm run build
+          npm version ${{ github.event.inputs.releaseversion }}
 
       - name: Conventional Changelog Action
         uses: TriPSs/conventional-changelog-action@v5
