@@ -1,5 +1,9 @@
 # solix-api
-Solix API Wrapper
+
+Solix API Wrapper for NodeJS
+
+[![npm version](https://badge.fury.io/js/@t21n%2Fsolix-api.svg)](https://www.npmjs.com/package/@t21n/solix-api)
+[![Known Vulnerabilities](https://snyk.io/test/github/t21n/solix-api/badge.svg)](https://snyk.io/test/github/t21n/solix-api)
 
 ![NPM Version](https://img.shields.io/npm/v/%40t21n%2Fsolix-api)
 
