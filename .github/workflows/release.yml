@@ -1,86 +1,89 @@
 name: Create release # You may choose a different name
 run-name: ${{ inputs.releaseversion }} # Enumerates entries in the "workflow runs" view
 on:
-  workflow_dispatch:
-    inputs:
-      releaseversion:
-        description: "Release version"
-        required: true
-        type: string
-        default: "X.Y.Z"
+    workflow_dispatch:
+        inputs:
+            releaseversion:
+                description: "Release version"
+                required: true
+                type: string
+                default: "X.Y.Z"
 
 jobs:
-  release: # Arbitrarily chosen
-    name: Release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-      attestations: write
-      id-token: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    release:
+        name: Release
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            packages: write
+            attestations: write
+            id-token: write
+        steps:
 
-      - uses: actions/create-github-app-token@v1
-        id: app-token
-        with:
-          app-id: ${{ vars.CI_APP_ID }}
-          private-key: ${{ secrets.CI_PRIVATE_KEY }}
+            -   uses: actions/create-github-app-token@v1
+                id: app-token
+                with:
+                    app-id: ${{ vars.CI_APP_ID }}
+                    private-key: ${{ secrets.CI_PRIVATE_KEY }}
 
-      - name: Get GitHub App User ID
-        id: get-user-id
-        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+            -   name: Checkout
+                uses: actions/checkout@v4
+                with:
+                    fetch-depth: 0
+                    token: ${{ steps.app-token.outputs.token }}
+                    ref: ${{ github.head_ref }}
 
-      - name: Configure git
-        run: |
-          git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
-          git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>'
+            -   name: Get GitHub App User ID
+                id: get-user-id
+                run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+                env:
+                    GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      - name: Setup NodeJS
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
+            -   name: Configure Git author
+                run: |
+                    git config --global user.name '${{ steps.app-token.outputs.app-slug }}[bot]'
+                    git config --global user.email '${{ steps.get-user-id.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com>'
 
-      - name: Create release
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          npm run clean
-          npm run build
-          npm version ${{ github.event.inputs.releaseversion }}
-          git push
-          git push --tags
+            -   name: Setup NodeJS
+                uses: actions/setup-node@v4
+                with:
+                    node-version: '20'
+                    registry-url: 'https://registry.npmjs.org'
 
-      - name: Conventional Changelog Action
-        uses: TriPSs/conventional-changelog-action@v5
-        with:
-          input-file: CHANGELOG.md
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          version-file: package.json
-          pre-release: true
-          skip-bump: true
-          skip-tag: true
-          skip-on-empty: true
-          tag-prefix: "v"
+            -   name: Create release
+                env:
+                    GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+                run: |
+                    npm run clean
+                    npm run build
+                    npm version ${{ github.event.inputs.releaseversion }}
+                    git push
+                    git push --tags
 
-      - name: Create Release on GH
-        id: tag-and-release
-        uses: avakar/tag-and-release@v1
-        with:
-          draft: true
-          release_name: ${{ github.event.inputs.releaseversion }}
-          tag_name: v${{ github.event.inputs.releaseversion }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            -   name: Conventional Changelog Action
+                uses: TriPSs/conventional-changelog-action@v5
+                with:
+                    input-file: CHANGELOG.md
+                    github-token: ${{ secrets.GITHUB_TOKEN }}
+                    version-file: package.json
+                    pre-release: true
+                    skip-bump: true
+                    skip-tag: true
+                    skip-on-empty: true
+                    tag-prefix: "v"
 
-      - name: Publish npm package
-        run: |
-          npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+            -   name: Create Release on GH
+                id: tag-and-release
+                uses: avakar/tag-and-release@v1
+                with:
+                    draft: true
+                    release_name: ${{ github.event.inputs.releaseversion }}
+                    tag_name: v${{ github.event.inputs.releaseversion }}
+                env:
+                    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            -   name: Publish npm package
+                run: |
+                    npm publish
+                env:
+                    NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
